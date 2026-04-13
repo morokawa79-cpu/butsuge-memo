@@ -682,13 +682,14 @@ function showScreen(name) {
 // =============================================================
 
 const fieldState = {
-  photo: null,       // { data: base64, takenAt: ISO }
+  photo: null,
   latitude: null,
   longitude: null,
   address: '',
-  source: null,      // 'photo' | 'geolocation' | 'manual'
+  source: null,
   propertyType: null,
   rank: null,
+  direction: null,   // 方角（度数 0-360、0=北）
 };
 
 function resetFieldState() {
@@ -699,10 +700,60 @@ function resetFieldState() {
   fieldState.source = null;
   fieldState.propertyType = null;
   fieldState.rank = null;
+  fieldState.direction = null;
+}
+
+// ===== コンパス =====
+let compassHeading = null;
+let compassListener = null;
+
+function degreesToCardinal(deg) {
+  const dirs = ['北','北北東','北東','東北東','東','東南東','南東','南南東','南','南南西','南西','西南西','西','西北西','北西','北北西'];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+function startCompass() {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // iOS 13+ — 許可が必要
+    DeviceOrientationEvent.requestPermission()
+      .then(state => { if (state === 'granted') listenCompass(); })
+      .catch(() => {});
+  } else {
+    // Android・その他
+    listenCompass();
+  }
+}
+
+function listenCompass() {
+  compassListener = (e) => {
+    if (e.webkitCompassHeading != null) {
+      compassHeading = e.webkitCompassHeading; // iOS（真北基準）
+    } else if (e.absolute && e.alpha != null) {
+      compassHeading = (360 - e.alpha) % 360;  // Android
+    }
+  };
+  window.addEventListener('deviceorientation', compassListener, true);
+}
+
+function stopCompass() {
+  if (compassListener) {
+    window.removeEventListener('deviceorientation', compassListener, true);
+    compassListener = null;
+  }
+  compassHeading = null;
+}
+
+function captureDirection() {
+  if (compassHeading != null) {
+    fieldState.direction = Math.round(compassHeading);
+  }
 }
 
 function startFieldMode() {
   resetFieldState();
+  stopCompass();
+  startCompass();
   showScreen('field');
 
   // 全ステップ非表示→ステップ1表示
@@ -983,6 +1034,7 @@ function selectRank(rank) {
 const TYPE_LABELS = { house: '🏠 一戸建て', mansion: '🏢 マンション', land: '🟫 土地', other: '📍 その他' };
 
 function saveEntry() {
+  captureDirection();
   const now = new Date().toISOString();
   const entry = {
     id: generateId(),
@@ -992,6 +1044,7 @@ function saveEntry() {
     latitude: fieldState.latitude,
     longitude: fieldState.longitude,
     address: fieldState.address,
+    direction: fieldState.direction,
     propertyType: fieldState.propertyType,
     rank: fieldState.rank,
     photos: fieldState.photo ? [fieldState.photo] : [],
@@ -1008,12 +1061,14 @@ function saveEntry() {
   };
 
   addEntry(entry);
+  stopCompass();
 
   // 完了画面表示
+  const dirText = entry.direction != null ? `　🧭 ${degreesToCardinal(entry.direction)}` : '';
   document.getElementById('field-step3').style.display = 'none';
   document.getElementById('field-complete').style.display = 'block';
   document.getElementById('complete-summary').textContent =
-    `${TYPE_LABELS[entry.propertyType]}  ランク${entry.rank}`;
+    `${TYPE_LABELS[entry.propertyType]}  ランク${entry.rank}${dirText}`;
 }
 
 // =============================================================
@@ -1059,7 +1114,7 @@ function renderList() {
         <div class="entry-info">
           <div class="entry-date">${date}</div>
           <div class="entry-address">${escHtml(label)}</div>
-          <div class="entry-type">${typeLabel}</div>
+          <div class="entry-type">${typeLabel}${e.direction != null ? `　🧭 ${degreesToCardinal(e.direction)}(${e.direction}°)` : ''}</div>
         </div>
         ${mapBtn}
         ${photoHtml}
