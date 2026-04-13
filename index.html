@@ -812,15 +812,17 @@ async function handlePhotoSelected(event) {
 
 // --- 現在地ボタン ---
 function handleGeolocation() {
-  showStatus('📍 現在地を取得しています…　→ 時間がかかる場合は下の「住所を手入力」を使ってください', 'info');
-  const watchId = navigator.geolocation.getCurrentPosition(
+  showStatus('📍 現在地を取得中…（このまま次へ進めます）', 'info');
+  // GPS完了を待たずすぐ次へボタンを出す
+  fieldState.source = 'geolocation';
+  markStep1Done();
+
+  navigator.geolocation.getCurrentPosition(
     (pos) => {
       fieldState.latitude = pos.coords.latitude;
       fieldState.longitude = pos.coords.longitude;
-      fieldState.source = 'geolocation';
       setLocationBadge(`${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`);
       document.getElementById('step1-status').style.display = 'none';
-      markStep1Done();
     },
     (err) => {
       showStatus('現在地を取得できませんでした。住所を手入力してください。', 'warn');
