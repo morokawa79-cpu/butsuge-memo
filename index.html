@@ -427,9 +427,9 @@
       <!-- 写真プレビュー -->
       <img id="photo-preview" class="photo-preview" alt="写真プレビュー">
 
-      <!-- 位置情報取得済みバッジ -->
-      <div id="location-badge" class="location-badge" style="display:none;">
-        📍 <span id="location-badge-text"></span>
+      <!-- 位置情報取得済みバッジ（タップでGoogleマップを開く） -->
+      <div id="location-badge" class="location-badge" style="display:none; cursor:pointer;" onclick="openMapFromBadge()">
+        📍 <span id="location-badge-text"></span> <span style="font-size:13px; opacity:0.8;">→ 地図で確認</span>
       </div>
 
       <div class="spacer"></div>
@@ -761,6 +761,16 @@ function setLocationBadge(text) {
   badge.style.display = 'inline-flex';
 }
 
+function openMapFromBadge() {
+  if (fieldState.latitude && fieldState.longitude) {
+    window.open(`https://maps.google.com/?q=${fieldState.latitude},${fieldState.longitude}`, '_blank');
+  }
+}
+
+function openMapForEntry(lat, lng) {
+  window.open(`https://maps.google.com/?q=${lat},${lng}`, '_blank');
+}
+
 // --- 写真撮影 ---
 async function handlePhotoSelected(event) {
   const file = event.target.files[0];
@@ -1039,6 +1049,10 @@ function renderList() {
       ? `<img src="${e.photos[0].data}" class="entry-photo" alt="写真">`
       : `<div class="entry-photo-placeholder">${typeLabel.split(' ')[0]}</div>`;
 
+    const mapBtn = (e.latitude && e.longitude)
+      ? `<button onclick="event.stopPropagation(); openMapForEntry(${e.latitude},${e.longitude})" style="background:none;border:none;font-size:22px;cursor:pointer;padding:4px;" title="Googleマップで開く">🗺️</button>`
+      : '';
+
     return `
       <div class="entry-item" onclick="openEntry('${e.id}')">
         <span class="rank-badge ${e.rank}">${e.rank}</span>
@@ -1047,6 +1061,7 @@ function renderList() {
           <div class="entry-address">${escHtml(label)}</div>
           <div class="entry-type">${typeLabel}</div>
         </div>
+        ${mapBtn}
         ${photoHtml}
       </div>
     `;
