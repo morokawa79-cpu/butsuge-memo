@@ -1007,7 +1007,6 @@ function selectRank(rank) {
 const TYPE_LABELS = { house: '🏠 一戸建て', mansion: '🏢 マンション', land: '🟫 土地', other: '📍 その他' };
 
 function saveEntry() {
-  captureDirection();
   const now = new Date().toISOString();
   const entry = {
     id: generateId(),
