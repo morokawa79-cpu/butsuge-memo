@@ -563,11 +563,29 @@
 
 <!-- ===== 画面3：物件一覧 ===== -->
 <div id="screen-list" class="screen">
-  <div class="screen-header">
+  <div class="screen-header" id="list-header-normal">
     <button class="back-btn" onclick="showScreen('home')">←</button>
     <h1>物件一覧</h1>
+    <button id="select-mode-btn" onclick="enterSelectMode()" style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:16px;font-weight:600;padding:8px 14px;border-radius:8px;cursor:pointer;">選択</button>
+  </div>
+  <div class="screen-header" id="list-header-select" style="display:none;">
+    <button class="back-btn" onclick="exitSelectMode()">✕</button>
+    <h1 id="select-count-label">0件選択</h1>
+    <button id="delete-selected-btn" onclick="deleteSelected()" style="background:#c53030;border:none;color:white;font-size:16px;font-weight:600;padding:8px 14px;border-radius:8px;cursor:pointer;opacity:0.4;" disabled>削除</button>
   </div>
   <div class="screen-body" id="list-body">
+    <!-- JSで描画 -->
+  </div>
+</div>
+
+<!-- ===== 画面5：物件詳細 ===== -->
+<div id="screen-detail" class="screen">
+  <div class="screen-header">
+    <button class="back-btn" id="detail-back-btn" onclick="showScreen('list')">←</button>
+    <h1 id="detail-title">物件詳細</h1>
+    <button id="detail-edit-btn" onclick="toggleEditMode()" style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:16px;font-weight:600;padding:8px 14px;border-radius:8px;cursor:pointer;">編集</button>
+  </div>
+  <div class="screen-body" id="detail-body">
     <!-- JSで描画 -->
   </div>
 </div>
@@ -673,7 +691,13 @@ function showScreen(name) {
     target.classList.add('active');
     window.scrollTo(0, 0);
   }
-  if (name === 'list') renderList();
+  if (name === 'list') {
+    selectMode = false;
+    selectedIds.clear();
+    document.getElementById('list-header-normal').style.display = 'flex';
+    document.getElementById('list-header-select').style.display = 'none';
+    renderList();
+  }
   if (name === 'settings') updateStorageInfo();
 }
 
@@ -1050,6 +1074,21 @@ function renderList() {
       ? `<img src="${e.photos[0].data}" class="entry-photo" alt="写真">`
       : `<div class="entry-photo-placeholder">${typeLabel.split(' ')[0]}</div>`;
 
+    if (selectMode) {
+      const checked = selectedIds.has(e.id);
+      return `
+        <div class="entry-item" id="item-${e.id}" style="${checked ? 'background:var(--primary-light);' : ''}" onclick="toggleSelectEntry('${e.id}')">
+          <input type="checkbox" id="cb-${e.id}" ${checked ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelectEntry('${e.id}')" style="width:24px;height:24px;flex-shrink:0;">
+          <span class="rank-badge ${e.rank}">${e.rank}</span>
+          <div class="entry-info">
+            <div class="entry-date">${date}</div>
+            <div class="entry-address">${escHtml(label)}</div>
+            <div class="entry-type">${typeLabel}</div>
+          </div>
+          ${photoHtml}
+        </div>`;
+    }
+
     const mapBtn = (e.latitude && e.longitude)
       ? `<button onclick="event.stopPropagation(); openMapForEntry(${e.latitude},${e.longitude})" style="background:none;border:none;font-size:22px;cursor:pointer;padding:4px;" title="Googleマップで開く">🗺️</button>`
       : '';
@@ -1082,23 +1121,184 @@ function getLocationLabel(entry) {
   return '場所未記録';
 }
 
-function openEntry(id) {
-  // Week 2で詳細画面を実装予定
-  const entry = loadEntries().find(e => e.id === id);
-  if (!entry) return;
-  const typeLabel = TYPE_LABELS[entry.propertyType] || 'その他';
-  const date = new Date(entry.createdAt).toLocaleString('ja-JP');
-  const loc = getLocationLabel(entry);
-  const mapUrl = entry.latitude && entry.longitude
-    ? `https://www.google.com/maps?q=${entry.latitude},${entry.longitude}`
-    : null;
+// =============================================================
+// 詳細画面
+// =============================================================
 
-  const mapBtn = mapUrl ? `<a href="${mapUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="margin-top:12px;">🗺️ Googleマップで開く</a>` : '';
+let currentDetailId = null;
+let isEditMode = false;
+
+function openEntry(id) {
+  currentDetailId = id;
+  isEditMode = false;
+  renderDetail();
+  showScreen('detail');
+}
+
+function renderDetail() {
+  const entry = loadEntries().find(e => e.id === currentDetailId);
+  if (!entry) { showScreen('list'); return; }
+
+  const typeLabel = TYPE_LABELS[entry.propertyType] || '📍 不明';
+  const date = new Date(entry.createdAt).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  const loc = getLocationLabel(entry);
+  const hasMap = entry.latitude && entry.longitude;
+
+  document.getElementById('detail-title').textContent = isEditMode ? '編集' : typeLabel;
+  document.getElementById('detail-edit-btn').textContent = isEditMode ? '完了' : '編集';
+
+  if (isEditMode) {
+    renderEditForm(entry);
+  } else {
+    renderDetailView(entry, typeLabel, date, loc, hasMap);
+  }
+}
+
+function renderDetailView(entry, typeLabel, date, loc, hasMap) {
   const photoHtml = entry.photos && entry.photos.length > 0
-    ? `<img src="${entry.photos[0].data}" style="width:100%;border-radius:12px;margin-bottom:16px;" alt="写真">`
+    ? `<img src="${entry.photos[0].data}" style="width:100%;border-radius:12px;margin-bottom:16px;display:block;" alt="写真">`
     : '';
 
-  alert(`【${typeLabel}】 ランク${entry.rank}\n📅 ${date}\n📍 ${loc}`);
+  const mapBtn = hasMap
+    ? `<button class="btn btn-secondary btn-sm" onclick="openMapForEntry(${entry.latitude},${entry.longitude})" style="margin-bottom:12px;">🗺️ Googleマップで開く</button>`
+    : '';
+
+  document.getElementById('detail-body').innerHTML = `
+    ${photoHtml}
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <span class="rank-badge ${entry.rank}" style="width:48px;height:48px;font-size:24px;">${entry.rank}</span>
+        <div>
+          <div style="font-size:20px;font-weight:700;">${typeLabel}</div>
+          <div style="font-size:14px;color:var(--text-muted);">📅 ${date}</div>
+        </div>
+      </div>
+      <div style="font-size:17px;color:var(--text-muted);margin-bottom:4px;">📍 ${escHtml(loc)}</div>
+    </div>
+    ${mapBtn}
+    <button class="btn btn-danger" onclick="confirmDeleteEntry('${entry.id}')">
+      🗑️ この物件を削除する
+    </button>
+    <div class="bottom-pad"></div>
+  `;
+}
+
+function renderEditForm(entry) {
+  document.getElementById('detail-body').innerHTML = `
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px;">ランク</div>
+      <div class="grid-3" id="edit-rank-grid">
+        ${['A','B','C'].map(r => `
+          <button class="rank-btn ${r} ${entry.rank===r?'selected':''}" id="edit-rank-${r}" onclick="selectEditRank('${r}')">
+            <span class="rank-letter">${r}</span>
+          </button>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px;">物件種類</div>
+      <div class="grid-2x2">
+        ${[['house','🏠','一戸建て'],['mansion','🏢','マンション'],['land','🟫','土地'],['other','📍','その他']].map(([t,em,lb]) => `
+          <button class="type-btn ${entry.propertyType===t?'selected':''}" id="edit-type-${t}" onclick="selectEditType('${t}')">
+            <span class="emoji">${em}</span>
+            <span class="label">${lb}</span>
+          </button>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px;">住所・メモ</div>
+      <input type="text" id="edit-address" class="form-input" value="${escHtml(entry.address||'')}" placeholder="住所・場所のメモ">
+    </div>
+    <div class="bottom-pad"></div>
+  `;
+  // 編集用の一時状態
+  window._editState = { rank: entry.rank, propertyType: entry.propertyType };
+}
+
+function selectEditRank(r) {
+  window._editState.rank = r;
+  ['A','B','C'].forEach(x => document.getElementById('edit-rank-'+x).classList.toggle('selected', x===r));
+}
+
+function selectEditType(t) {
+  window._editState.propertyType = t;
+  ['house','mansion','land','other'].forEach(x => document.getElementById('edit-type-'+x).classList.toggle('selected', x===t));
+}
+
+function toggleEditMode() {
+  if (isEditMode) {
+    // 保存
+    const entries = loadEntries();
+    const idx = entries.findIndex(e => e.id === currentDetailId);
+    if (idx !== -1) {
+      entries[idx].rank = window._editState.rank;
+      entries[idx].propertyType = window._editState.propertyType;
+      entries[idx].address = document.getElementById('edit-address').value.trim();
+      entries[idx].updatedAt = new Date().toISOString();
+      saveEntries(entries);
+    }
+    isEditMode = false;
+  } else {
+    isEditMode = true;
+  }
+  renderDetail();
+}
+
+function confirmDeleteEntry(id) {
+  if (!confirm('この物件を削除しますか？')) return;
+  const entries = loadEntries().filter(e => e.id !== id);
+  saveEntries(entries);
+  showScreen('list');
+}
+
+// =============================================================
+// 一覧：選択モード
+// =============================================================
+
+let selectMode = false;
+let selectedIds = new Set();
+
+function enterSelectMode() {
+  selectMode = true;
+  selectedIds.clear();
+  document.getElementById('list-header-normal').style.display = 'none';
+  document.getElementById('list-header-select').style.display = 'flex';
+  updateSelectCount();
+  renderList();
+}
+
+function exitSelectMode() {
+  selectMode = false;
+  selectedIds.clear();
+  document.getElementById('list-header-normal').style.display = 'flex';
+  document.getElementById('list-header-select').style.display = 'none';
+  renderList();
+}
+
+function toggleSelectEntry(id) {
+  if (selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  updateSelectCount();
+  // チェックボックスだけ更新
+  const cb = document.getElementById('cb-' + id);
+  const item = document.getElementById('item-' + id);
+  if (cb) cb.checked = selectedIds.has(id);
+  if (item) item.style.background = selectedIds.has(id) ? 'var(--primary-light)' : '';
+}
+
+function updateSelectCount() {
+  const n = selectedIds.size;
+  document.getElementById('select-count-label').textContent = `${n}件選択`;
+  const btn = document.getElementById('delete-selected-btn');
+  btn.disabled = n === 0;
+  btn.style.opacity = n === 0 ? '0.4' : '1';
+}
+
+function deleteSelected() {
+  if (selectedIds.size === 0) return;
+  if (!confirm(`${selectedIds.size}件の物件を削除しますか？`)) return;
+  const entries = loadEntries().filter(e => !selectedIds.has(e.id));
+  saveEntries(entries);
+  exitSelectMode();
 }
 
 function escHtml(str) {
